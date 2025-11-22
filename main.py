@@ -4,25 +4,70 @@ import json
 import time
 import sys
 import threading
+import os
 
+os.environ["SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS"] = "1"
+
+# Importations spécifiques à votre projet
 import controller_to_esp
 from select_serial_port import select_serial_port
 import view
 
 BAUD_RATE = 115200
-DELAY_MS = 50 # 50 ms = 20 FPS (Taux de rafraîchissement)
+DELAY_MS = 10 # 50 ms = 20 FPS (Taux de rafraîchissement)
+
+COLOR_GREEN = '\033[92m'  # Vert clair pour les logs ESP32
+COLOR_CYAN = '\033[96m'   # Cyan pour les envois PC
+COLOR_RED = '\033[91m'    # Rouge pour les erreurs
+COLOR_END = '\033[0m'     # Code pour réinitialiser la couleur
 
 # --- NOUVELLES VARIABLES GLOBALES POUR SYNCHRONISATION ---
 # Dictionnaire partagé pour l'état de la manette
 controller_snapshot = None 
 # Verrou pour protéger l'accès au dictionnaire partagé
 snapshot_lock = threading.Lock() 
-# Indicateur pour le thread Pygame
+# Indicateur pour le thread Pygame et le thread principal
 running_pygame = True
 
 serial_port = ""
 
-# --- NOUVELLE CLASSE DE THREAD POUR L'AFFICHAGE ---
+# --- NOUVELLE CLASSE DE THREAD POUR LA LECTURE SÉRIE (CONSOLE ESP32) ---
+class SerialReadThread(threading.Thread):
+    """Lit les données entrantes du port série (la console de l'ESP32) et les affiche."""
+    def __init__(self, ser_connection):
+        super().__init__()
+        self.ser = ser_connection
+        self.running = True
+
+    def run(self):
+        print("\n--- Démarrage du Thread de Lecture Série (Console ESP32) ---")
+        while self.running:
+            try:
+                # Vérifie s'il y a des données disponibles à lire (messages console ESP32)
+                if self.ser.in_waiting > 0:
+                    # Lecture de toutes les lignes disponibles
+                    while self.ser.in_waiting > 0:
+                        # Lire jusqu'à \n. Le strip() retire les espaces et \n/\r.
+                        line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                        if line:
+                            # AFFICHAGE DE LA CONSOLE DE L'ESP32 DANS LE TERMINAL PYTHON
+                            print(f"{COLOR_GREEN}[ESP32 LOG {time.strftime('%H:%M:%S')}] {line}{COLOR_END}")
+                
+                time.sleep(0.1) # Petite pause pour éviter de monopoliser le CPU
+
+            except Exception as e:
+                # Gérer les erreurs de port série (ex: déconnexion)
+                if self.running:
+                    print(f"❌ Erreur de lecture série. Arrêt du thread: {e}", file=sys.stderr)
+                break
+        print("Thread de Lecture Série terminé.")
+
+    def stop(self):
+        """Signale au thread de s'arrêter proprement."""
+        self.running = False
+
+
+# --- CLASSE DE THREAD POUR L'AFFICHAGE PYGAME ---
 class PygameViewThread(threading.Thread):
     def __init__(self, serial_port_open):
         super().__init__()
@@ -48,7 +93,7 @@ class PygameViewThread(threading.Thread):
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running_pygame = False
-            
+                
             # Affichage graphique
             # N'essayez d'afficher que si un snapshot est disponible
             if controller_snapshot:
@@ -60,13 +105,12 @@ class PygameViewThread(threading.Thread):
                 view.draw_controller_state(screen, local_snapshot)
                 
             # Limiter le taux de rafraîchissement du thread Pygame à 30 FPS par exemple
-            # Cela permet de laguer l'affichage sans ralentir le thread principal
             clock.tick(30) # Limite à 30 images par seconde max
             
         pygame.quit()
         print("Thread Pygame terminé.")
         
-# --- ANCIENNE FONCTION MAIN (Maintenant le Thread Principal) ---
+# --- THREAD PRINCIPAL (Lecture Manette et Envoi Série) ---
 def main():
     global controller_snapshot, running_pygame, serial_port
 
@@ -90,10 +134,18 @@ def main():
         joystick.init()
         print(f"✅ Manette détectée : {joystick.get_name()}")
         
-        # --- 2. Initialisation du Port Série (Commenté pour le test) ---
-        ser = serial.Serial(selected_port, BAUD_RATE, timeout=0.1)
-        ser = None # Simuler l'objet série
-        time.sleep(2)  
+    except Exception as e:
+        print(f"❌ Erreur d'initialisation de la manette : {e}", file=sys.stderr)
+        pygame.quit()
+        sys.exit(1)
+
+    # --- 2. Initialisation du Port Série ---
+    ser = None
+    serial_port_open = False
+    try:
+        # Initialisation série : Timeout à 0 pour la lecture non bloquante dans le thread dédié
+        ser = serial.Serial(selected_port, BAUD_RATE, timeout=0)
+        time.sleep(2) # Attendre un peu pour que l'ESP32 redémarre (cycle DTR/RTS)
         print(f"✅ Port série {selected_port} ouvert. Début de la transmission.")
         serial_port_open = True
             
@@ -101,43 +153,43 @@ def main():
         print(f"❌ Erreur de port série. Assurez-vous que '{selected_port}' est correct et libre. Détail: {e}", file=sys.stderr)
         pygame.quit()
         sys.exit(1)
-    except Exception as e:
-        print(f"❌ Erreur d'initialisation : {e}", file=sys.stderr)
-        pygame.quit()
-        sys.exit(1)
-
-    # --- 3. Démarrage du Thread Pygame ---
+        
+    # --- 3. Démarrage des Threads ---
+    
+    # Thread 1 : Affichage Pygame
     pygame_thread = PygameViewThread(serial_port_open)
     pygame_thread.start()
+    
+    # Thread 2 : Lecture Console ESP32
+    serial_read_thread = SerialReadThread(ser)
+    serial_read_thread.start() 
 
     # --- 4. Boucle Principale (Lecture Manette et Envoi Série) ---
-    print("\n--- Lecture Manette et Envoi Série (Ctrl+C pour arrêter) ---")
+    print("\n--- Lecture Manette et Envoi Série (Ctrl+C ou fermer fenêtre pour arrêter) ---")
     running_main = True
     
     try:
         while running_main:
-            # Vérifiez si le thread d'affichage a demandé l'arrêt (fermeture de la fenêtre)
+            # Vérifiez si le thread d'affichage a demandé l'arrêt
             if not running_pygame:
                 running_main = False
                 break
                 
             # Lire l'état de la manette
-            snapshot = controller_to_esp.map_xbox_controller(joystick)
+            snapshot, packet = controller_to_esp.map_xbox_controller(joystick)
             
             if snapshot:
                 # Mettre à jour le snapshot partagé (avec verrou)
                 with snapshot_lock:
                     controller_snapshot = snapshot
                 
-                # --- B. ENVOI SÉRIE (Prioritaire) ---
-                json_data = json.dumps(snapshot, separators=(',', ':'))
-                
                 try:
-                    if ser:
-                        ser.write((json_data + "\n").encode('utf-8'))
-                    # Affichage pour le débogage de la console (peut être retiré)
-                    print(f"Envoi ({len(json_data)} octets) : {json_data}")
-                    pass
+                    if ser and ser.is_open:
+                        # ENVOI des données JSON
+                        ser.write(packet)
+                    
+                    # Affichage pour le débogage de l'envoi
+                    # print(f"[PC TX {time.strftime('%H:%M:%S')}] Envoi ({len(json_data)} octets) : {json_data}")
 
                 except serial.SerialTimeoutException:
                     print("Timeout d'envoi série.", file=sys.stderr)
@@ -151,15 +203,19 @@ def main():
     finally:
         # 5. Nettoyage
         
-        # Signaler au thread Pygame de s'arrêter
+        # Signaler aux threads de s'arrêter
         running_pygame = False 
         
-        # Attendre la fin du thread Pygame
+        # Arrêter le thread de lecture série
+        serial_read_thread.stop() 
+        
+        # Attendre la fin des threads
         pygame_thread.join() 
+        serial_read_thread.join()
         
         # Assurer la fermeture propre du port série
         if ser and ser.is_open:
-            # ser.close()
+            ser.close()
             print("Port série fermé.")
             
         # Fermer l'initialisation Pygame restante dans le thread principal
