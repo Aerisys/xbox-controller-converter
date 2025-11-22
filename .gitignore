@@ -1,0 +1,21 @@
+--- Environnement Virtuel ---
+
+Le dossier entier de l'environnement virtuel Python
+
+venv/
+.venv/
+
+--- Caches et Compilations Python ---
+
+pycache/
+*.pyc
+~$
+
+Fichiers d'historique et de log
+
+*.log
+
+Dossiers créés par l'IDE (ex: VS Code, PyCharm, etc.)
+
+.vscode/
+.idea/
