@@ -1,18 +1,7 @@
 import pygame
-import serial
-import json
-import time
 import sys
 
-import view
-
-# --- Configuration ---
-# REMARQUE IMPORTANTE : Changer ce port en fonction de votre OS et du port de l'ESP32.
-SERIAL_PORT = 'COM5'  # <-- À CHANGER SELON VOTRE SYSTÈME !
-BAUD_RATE = 115200
-DELAY_MS = 50  # 50 ms = 20 FPS (Taux de rafraîchissement)
-
-
+import serial
 
 def map_xbox_controller(joystick):
     """
@@ -77,83 +66,3 @@ def map_xbox_controller(joystick):
         return None
 
 
-def main():
-    # --- 1. Initialisation Pygame et Manette ---
-    pygame.init()
-    pygame.joystick.init()
-    pygame.font.init()
-    
-    # Initialisation de la fenêtre Pygame
-    screen = pygame.display.set_mode((view.SCREEN_WIDTH, view.SCREEN_HEIGHT))
-    pygame.display.set_caption("Lecteur Manette XInput pour ESP32")
-
-
-    try:
-        if pygame.joystick.get_count() == 0:
-            print("❌ Aucune manette XInput détectée ! Veuillez la connecter.")
-            pygame.quit()
-            sys.exit(1)
-
-        joystick = pygame.joystick.Joystick(0)
-        joystick.init()
-        print(f"✅ Manette détectée : {joystick.get_name()}")
-        
-        # --- 2. Initialisation du Port Série ---
-        #ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.1)
-        time.sleep(2)  # Attendre que la connexion série soit stable
-        print(f"✅ Port série {SERIAL_PORT} ouvert. Début de la transmission.")
-            
-    except serial.SerialException as e:
-        print(f"❌ Erreur de port série. Assurez-vous que '{SERIAL_PORT}' est correct et libre. Détail: {e}", file=sys.stderr)
-        pygame.quit()
-        sys.exit(1)
-    except Exception as e:
-        print(f"❌ Erreur d'initialisation : {e}", file=sys.stderr)
-        pygame.quit()
-        sys.exit(1)
-
-    # --- 3. Boucle Principale ---
-    print("\n--- Envoi des données JSON et Affichage graphique (Ctrl+C pour arrêter) ---")
-    running = True
-    
-    try:
-        while running:
-            # Gère les événements de la fenêtre (fermeture)
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-
-            # Lire l'état de la manette
-            snapshot = map_xbox_controller(joystick)
-            
-            if snapshot:
-                # --- A. AFFICHAGE GRAPHIQUE ---
-                view.draw_controller_state(screen, snapshot)
-                
-                # --- B. ENVOI SÉRIE ---
-                json_data = json.dumps(snapshot, separators=(',', ':'))
-                
-                try:
-                    #ser.write((json_data + "\n").encode('utf-8'))
-                    print()
-                    # Affichage des données envoyées dans la console (pour le débogage)
-                    # print(f"Envoi ({len(json_data)} octets) : {json_data}")
-                except serial.SerialTimeoutException:
-                    print("Timeout d'envoi série.", file=sys.stderr)
-                except Exception as e:
-                    print(f"Erreur d'écriture série: {e}", file=sys.stderr)
-                
-            time.sleep(DELAY_MS / 1000.0) # Pause pour contrôler la fréquence
-
-    except KeyboardInterrupt:
-        print("\nArrêt par l'utilisateur (Ctrl+C).")
-    finally:
-        # Assurer la fermeture propre de toutes les ressources
-        if 'ser' in locals() and ser.is_open:
-            #ser.close()
-            print("Port série fermé.")
-        pygame.quit()
-        print("Pygame terminé.")
-
-if __name__ == "__main__":
-    main()

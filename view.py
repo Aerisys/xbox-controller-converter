@@ -1,5 +1,5 @@
 import pygame
-import controller_to_esp
+import main
 
 # --- Configuration Pygame GUI ---
 SCREEN_WIDTH = 800
@@ -88,7 +88,7 @@ def draw_controller_state(screen, snapshot):
     draw_text(screen, f"RThumb: {'ON' if snapshot['RThumb'] else 'OFF'}", stick_x, stick_y + 170, font_size, RED if snapshot['RThumb'] else WHITE)
 
     # --- 4. Boutons de Façade (A, B, X, Y) ---
-    btn_x = 50
+    btn_x = 350
     btn_y = 350    
     # Fonction pour dessiner un bouton
     def draw_button(name, value, center_x, center_y, color):
@@ -108,7 +108,7 @@ def draw_controller_state(screen, snapshot):
     draw_button("X", snapshot['X'], btn_x + 20, btn_y + 30, BLUE)
 
     # --- 5. D-Pad (Flèches) ---
-    dpad_x = btn_x+150
+    dpad_x = 50
     dpad_y = btn_y    
     def draw_dpad_button(name, value, center_x, center_y):
         current_color = WHITE if value else LIGHT_GREY
@@ -121,7 +121,7 @@ def draw_controller_state(screen, snapshot):
     draw_dpad_button("D", snapshot['DPadRight'], dpad_x + 60, dpad_y + 30)
 
     # --- 6. Boutons Centraux (Back et Start) ---
-    center_btn_x = btn_x + 300
+    center_btn_x = 200
     center_btn_y = dpad_y
     draw_text(screen, "Boutons Centraux:", center_btn_x, center_btn_y, font_size, WHITE)
     draw_button("Back", snapshot['Back'], center_btn_x + 10, center_btn_y+50, WHITE)
@@ -130,8 +130,7 @@ def draw_controller_state(screen, snapshot):
 
     
     # --- 8. Informations Série/FPS ---
-    draw_text(screen, f"Port Série: {controller_to_esp.SERIAL_PORT} @ {controller_to_esp.BAUD_RATE}", base_x, 500, font_size, WHITE)
-    draw_text(screen, f"FPS: {1000 // controller_to_esp.DELAY_MS}", base_x, 520, font_size, WHITE)
+    draw_text(screen, f"Port Série: {main.serial_port} @ {main.BAUD_RATE}", base_x, 500, font_size, WHITE)
 
 
     pygame.display.flip()
