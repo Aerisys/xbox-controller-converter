@@ -1,3 +1,4 @@
+from dataclasses import asdict
 import pygame
 import serial
 import json
@@ -28,6 +29,8 @@ controller_snapshot = None
 snapshot_lock = threading.Lock() 
 # Indicateur pour le thread Pygame et le thread principal
 running_pygame = True
+
+space_was_pressed = False
 
 serial_port = ""
 
@@ -74,7 +77,7 @@ class PygameViewThread(threading.Thread):
         self.serial_port_open = serial_port_open
 
     def run(self):
-        global controller_snapshot, running_pygame, serial_port
+        global controller_snapshot, running_pygame, serial_port, space_was_pressed
         
         # Initialisation Pygame dans le thread
         pygame.init()
@@ -102,22 +105,23 @@ class PygameViewThread(threading.Thread):
                     local_snapshot = controller_snapshot.copy() 
                 
                 # --- A. AFFICHAGE GRAPHIQUE ---
-                view.draw_controller_state(screen, local_snapshot)
+                view.draw_controller_state(screen, local_snapshot, serial_port, space_was_pressed)
                 
             # Limiter le taux de rafraîchissement du thread Pygame à 30 FPS par exemple
             clock.tick(30) # Limite à 30 images par seconde max
             
         pygame.quit()
         print("Thread Pygame terminé.")
-        
+
 # --- THREAD PRINCIPAL (Lecture Manette et Envoi Série) ---
 def main():
-    global controller_snapshot, running_pygame, serial_port
+    global controller_snapshot, running_pygame, serial_port, space_was_pressed
 
     # --- 0. Sélection du Port Série ---
     selected_port = select_serial_port()
     if selected_port is None:
         sys.exit(1)
+    serial_port = selected_port
     
     # Initialisation Pygame (nécessaire pour la lecture de manette)
     pygame.init()
@@ -195,7 +199,35 @@ def main():
                     print("Timeout d'envoi série.", file=sys.stderr)
                 except Exception as e:
                     print(f"Erreur d'écriture série: {e}", file=sys.stderr)
-                
+            keys = pygame.key.get_pressed()
+            space_pressed = keys[pygame.K_SPACE]
+
+            # Détection front montant / descendant
+            if space_pressed != space_was_pressed:
+                try:
+                    snapshotTmp = controller_to_esp.XboxControllerData(
+                        Back=1 if space_pressed else 0
+                    )
+                    packetSpace = snapshotTmp.to_controller_packet()
+                    snapshotSpace = asdict(snapshotTmp)
+                    if snapshotSpace:
+                        try:
+                            if ser and ser.is_open:
+                                # ENVOI des données JSON
+                                ser.write(packetSpace)
+                            
+                            # Affichage pour le débogage de l'envoi
+                            # print(f"[PC TX {time.strftime('%H:%M:%S')}] Envoi ({len(json_data)} octets) : {json_data}")
+
+                        except serial.SerialTimeoutException:
+                            print("Timeout d'envoi série.", file=sys.stderr)
+                        except Exception as e:
+                            print(f"Erreur d'écriture série: {e}", file=sys.stderr)
+                except:
+                    pass
+
+            # Mise à jour
+            space_was_pressed = space_pressed
             time.sleep(DELAY_MS / 1000.0) # Pause pour contrôler la fréquence
 
     except KeyboardInterrupt:

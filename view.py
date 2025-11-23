@@ -29,7 +29,7 @@ def draw_text(screen, text, x, y, size=20, color=WHITE, font_name="Arial"):
     else:
         screen.blit(text_surface, (x, y))
 
-def draw_controller_state(screen, snapshot):
+def draw_controller_state(screen, snapshot, selected_port, space_was_pressed):
     """Dessine l'état de la manette sur l'écran Pygame."""
     screen.fill(GREY) # Arrière-plan
 
@@ -127,10 +127,17 @@ def draw_controller_state(screen, snapshot):
     draw_button("Back", snapshot['Back'], center_btn_x + 10, center_btn_y+50, WHITE)
     draw_button("Start", snapshot['Start'], center_btn_x + 90, center_btn_y+50, WHITE)
     
+    draw_text(
+        screen,
+        f"space : {'Press' if space_was_pressed else 'Not Press'}",
+        base_x,
+        500,
+        font_size,
+        GREEN if space_was_pressed else WHITE
+    )
 
-    
     # --- 8. Informations Série/FPS ---
-    draw_text(screen, f"Port Série: {main.serial_port} @ {main.BAUD_RATE}", base_x, 500, font_size, WHITE)
+    draw_text(screen, f"Port Série: {selected_port} @ {main.BAUD_RATE}", base_x, 530, font_size, WHITE)
 
 
     pygame.display.flip()

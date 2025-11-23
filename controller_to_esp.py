@@ -47,10 +47,10 @@ class XboxControllerData:
         motorArming = 1 if self.Start else 0
 
         payload = struct.pack("<ffffBB",
-            RightStickY,
-            RightStickX,
-            LeftStickY,
-            LeftStickX,
+            -RightStickY,
+            -RightStickX,
+            -LeftStickY,
+            -LeftStickX,
             motorState,
             motorArming
         )
