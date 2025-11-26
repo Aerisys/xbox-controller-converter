@@ -49,13 +49,15 @@ class XboxControllerData:
 
     def to_controller_packet(self) -> bytes:
         # floats
-        RightStickY = self.RightStickY
-        RightStickX = self.RightStickX
-        LeftStickY = self.LeftStickY
-        LeftStickX = self.LeftStickX
+        RightStickY = remap_vertical(self.RightStickY)
+        RightStickX = remap_vertical(self.RightStickX)
+        LeftStickY = remap_vertical(self.LeftStickY)
+        LeftStickX = remap_vertical(self.LeftStickX)
 
         motorState = 1 if self.Back else 0
         motorArming = 1 if self.Start else 0
+
+        print(f"Joystick gauche : X={LeftStickX}, Y={LeftStickY} | Joystick droit : X={RightStickX}, Y={RightStickY} | MotorState={motorState} | MotorArming={motorArming}")
 
         payload = struct.pack("<ffffBB",
             -RightStickY,
@@ -72,6 +74,11 @@ class XboxControllerData:
         checksum = bytes([sum(payload) & 0xFF])
 
         return header + length + payload + checksum
+
+def remap_vertical(x):
+    mapped = int((1 - x) * 2047.5)
+    return max(0, min(4095, mapped))
+
 
 def map_xbox_controller(joystick):
     """

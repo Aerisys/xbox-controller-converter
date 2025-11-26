@@ -1,6 +1,10 @@
 import pygame
 import main
 
+def remap_vertical(value):
+    mapped = int((1 - value) * 2047.5)
+    return max(0, min(4095, mapped))
+
 # --- Configuration Pygame GUI ---
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
@@ -73,7 +77,10 @@ def draw_controller_state(screen, snapshot, selected_port, space_was_pressed):
     ls_pos_x = stick_x + stick_area_size // 2 + int(snapshot['LeftStickX'] * stick_radius)
     ls_pos_y = stick_y + stick_area_size // 2 + 25 - int(snapshot['LeftStickY'] * stick_radius) # Le Y est inversé sur l'écran
     pygame.draw.circle(screen, BLUE, (ls_pos_x, ls_pos_y), 10)
-    draw_text(screen, f"X: {snapshot['LeftStickX']} / Y: {snapshot['LeftStickY']}", stick_x, stick_y + 150, font_size, WHITE)
+
+    mapped_LX = remap_vertical(snapshot['LeftStickX'])
+    mapped_LY = remap_vertical(snapshot['LeftStickY'])
+    draw_text(screen, f"X: {snapshot['LeftStickX']:.2f} ({mapped_LX}) / "f"Y: {snapshot['LeftStickY']:.2f} ({mapped_LY})",stick_x,stick_y + 150,font_size,WHITE)    
     draw_text(screen, f"LThumb: {'ON' if snapshot['LThumb'] else 'OFF'}", stick_x, stick_y + 170, font_size, BLUE if snapshot['LThumb'] else WHITE)
     
 
@@ -84,7 +91,11 @@ def draw_controller_state(screen, snapshot, selected_port, space_was_pressed):
     rs_pos_x = stick_x + stick_area_size // 2 + int(snapshot['RightStickX'] * stick_radius)
     rs_pos_y = stick_y + stick_area_size // 2 + 25 - int(snapshot['RightStickY'] * stick_radius) 
     pygame.draw.circle(screen, RED, (rs_pos_x, rs_pos_y), 10)
-    draw_text(screen, f"X: {snapshot['RightStickX']} / Y: {snapshot['RightStickY']}", stick_x, stick_y + 150, font_size, WHITE)
+    
+    mapped_LX = remap_vertical(snapshot['RightStickX'])
+    mapped_LY = remap_vertical(snapshot['RightStickY'])
+
+    draw_text(screen, f"X: {snapshot['RightStickX']:.2f} ({mapped_LX}) / "f"Y: {snapshot['RightStickY']:.2f} ({mapped_LY})",stick_x,stick_y + 150,font_size,WHITE)    
     draw_text(screen, f"RThumb: {'ON' if snapshot['RThumb'] else 'OFF'}", stick_x, stick_y + 170, font_size, RED if snapshot['RThumb'] else WHITE)
 
     # --- 4. Boutons de Façade (A, B, X, Y) ---
