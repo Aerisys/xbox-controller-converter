@@ -3,6 +3,17 @@ import sys
 import struct
 from dataclasses import dataclass, asdict, field
 
+import platform 
+system = platform.system()
+
+mappings = {
+    "Windows": {"ls_x":0, "ls_y":1, "rs_x":2, "rs_y":3, "lt":4, "rt":5},
+    "Linux":   {"ls_x":0, "ls_y":1, "rs_x":3, "rs_y":4, "lt":2, "rt":5},
+    "Default": {"ls_x":0, "ls_y":1, "rs_x":2, "rs_y":3, "lt":4, "rt":5}
+}
+
+mapping = mappings.get(system, mappings["Default"])
+
 @dataclass
 class XboxControllerData:
     """
@@ -73,14 +84,14 @@ def map_xbox_controller(joystick):
         pygame.event.pump()
 
         # --- 1. LECTURE BRUTE ---
-        ls_x = round(joystick.get_axis(0), 2)
-        ls_y = round(joystick.get_axis(1) * -1, 2) 
-        rs_x = round(joystick.get_axis(2), 2)
-        rs_y = round(joystick.get_axis(3) * -1, 2)
+        ls_x = round(joystick.get_axis(mapping["ls_x"]), 2)
+        ls_y = round(joystick.get_axis(mapping["ls_y"]) * -1, 2) 
+        rs_x = round(joystick.get_axis(mapping["rs_x"]), 2)
+        rs_y = round(joystick.get_axis(mapping["rs_y"]) * -1, 2)
 
         num_axes = joystick.get_numaxes()
-        lt_raw = joystick.get_axis(4) if num_axes > 4 else -1.0
-        rt_raw = joystick.get_axis(5) if num_axes > 5 else -1.0
+        lt_raw = joystick.get_axis(mapping["lt"]) if num_axes > mapping["lt"] else -1.0
+        rt_raw = joystick.get_axis(mapping["rt"]) if num_axes > mapping["rt"] else -1.0
         lt = round(max(0.0, (lt_raw + 1) / 2), 2)
         rt = round(max(0.0, (rt_raw + 1) / 2), 2)
 

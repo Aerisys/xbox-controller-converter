@@ -7,4 +7,4 @@ activée sont env de travail win : .\venv\Scripts\activate
 pip install -r requirements.txt
 
 win : python .\main.py
-linux : python3 .\main.py
+linux : python3 ./main.py
