@@ -34,6 +34,9 @@ space_was_pressed = False
 
 serial_port = ""
 
+timestamp = time.strftime("%Y-%m-%d_%H-%M-%S-") + f"{int(time.time() * 1000) % 1000:03d}"
+LOG_FILE_PATH = f"mpu_data_log_{timestamp}.csv"
+
 # --- NOUVELLE CLASSE DE THREAD POUR LA LECTURE SÉRIE (CONSOLE ESP32) ---
 class SerialReadThread(threading.Thread):
     """Lit les données entrantes du port série (la console de l'ESP32) et les affiche."""
@@ -41,29 +44,39 @@ class SerialReadThread(threading.Thread):
         super().__init__()
         self.ser = ser_connection
         self.running = True
+        # Ouverture du log ici pour le thread
+        self.log_file = open(LOG_FILE_PATH, "a")
+        if os.stat(LOG_FILE_PATH).st_size == 0:
+            self.log_file.write("timestamp,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z,roll,pitch,yaw\n")
 
     def run(self):
         print("\n--- Démarrage du Thread de Lecture Série (Console ESP32) ---")
         while self.running:
             try:
-                # Vérifie s'il y a des données disponibles à lire (messages console ESP32)
                 if self.ser.in_waiting > 0:
-                    # Lecture de toutes les lignes disponibles
                     while self.ser.in_waiting > 0:
-                        # Lire jusqu'à \n. Le strip() retire les espaces et \n/\r.
                         line = self.ser.readline().decode('utf-8', errors='ignore').strip()
                         if line:
-                            # AFFICHAGE DE LA CONSOLE DE L'ESP32 DANS LE TERMINAL PYTHON
                             print(f"{COLOR_GREEN}[ESP32 LOG {time.strftime('%H:%M:%S')}] {line}{COLOR_END}")
-                
-                time.sleep(0.1) # Petite pause pour éviter de monopoliser le CPU
+
+                            # --- ÉCRITURE DANS LE FICHIER LOG CSV ---
+                            if line.startswith("MPU_DATA"):
+                                parts = line.split(",")
+                                if len(parts) == 13:  # 12 floats + "MPU_DATA"
+                                    timestamp = time.time()
+                                    if len(parts) == 13:  # 12 floats + "MPU_DATA"
+                                        timestamp = time.strftime("%Y-%m-%d %H:%M:%S.") + f"{int(time.time() * 1000) % 1000:03d}"
+                                        self.log_file.write(f"{timestamp},{','.join(parts[1:])}\n")
+                                        self.log_file.flush()
+
+                time.sleep(0.1)
 
             except Exception as e:
-                # Gérer les erreurs de port série (ex: déconnexion)
                 if self.running:
                     print(f"❌ Erreur de lecture série. Arrêt du thread: {e}", file=sys.stderr)
                 break
         print("Thread de Lecture Série terminé.")
+        self.log_file.close()
 
     def stop(self):
         """Signale au thread de s'arrêter proprement."""
@@ -171,6 +184,13 @@ def main():
     # --- 4. Boucle Principale (Lecture Manette et Envoi Série) ---
     print("\n--- Lecture Manette et Envoi Série (Ctrl+C ou fermer fenêtre pour arrêter) ---")
     running_main = True
+
+    # Ouvrir le fichier log
+    log_file = open(LOG_FILE_PATH, "a")
+    # Écrire l'en-tête CSV si le fichier est vide
+    if os.stat(LOG_FILE_PATH).st_size == 0:
+        log_file.write("timestamp,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z,roll,pitch,yaw\n")
+
     
     try:
         while running_main:
@@ -253,6 +273,11 @@ def main():
         # Fermer l'initialisation Pygame restante dans le thread principal
         pygame.quit()
         print("Programme principal terminé.")
+
+        if log_file:
+            log_file.close()
+            print(f"Fichier log fermé : {LOG_FILE_PATH}")
+
 
 if __name__ == "__main__":
     main()

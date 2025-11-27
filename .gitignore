@@ -19,3 +19,5 @@ Dossiers créés par l'IDE (ex: VS Code, PyCharm, etc.)
 
 .vscode/
 .idea/
+
+*.csv
