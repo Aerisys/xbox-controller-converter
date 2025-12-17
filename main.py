@@ -110,6 +110,8 @@ class SerialReadThread(threading.Thread):
                                             mpu_angles["pitch"] = 0
                                             mpu_angles["yaw"] = 0
                                             pass
+                            else:
+                                print(f"{COLOR_CYAN}[ESP32 LOG {time.strftime('%H:%M:%S')}] {line}{COLOR_END}")
 
                 time.sleep(0.1)
 
