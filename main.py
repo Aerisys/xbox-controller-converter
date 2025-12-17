@@ -25,6 +25,7 @@ COLOR_END = '\033[0m'     # Code pour réinitialiser la couleur
 # --- NOUVELLES VARIABLES GLOBALES POUR SYNCHRONISATION ---
 # Dictionnaire partagé pour l'état de la manette
 controller_snapshot = None 
+mpu_angles = {"roll": 0.0, "pitch": 0.0, "yaw": 0.0}
 # Verrou pour protéger l'accès au dictionnaire partagé
 snapshot_lock = threading.Lock() 
 # Indicateur pour le thread Pygame et le thread principal
@@ -36,6 +37,39 @@ serial_port = ""
 
 timestamp = time.strftime("%Y-%m-%d_%H-%M-%S-") + f"{int(time.time() * 1000) % 1000:03d}"
 LOG_FILE_PATH = f"mpu_data_log_{timestamp}.csv"
+
+class RealTimeGraph:
+    def __init__(self, x, y, width, height, title, color):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.title = title
+        self.color = color
+        self.data = [0.0] * 100 
+
+    def add_point(self, val):
+        self.data.append(val)
+        if len(self.data) > 100:
+            self.data.pop(0)
+
+    def draw(self, surface):
+        # Fond et bordure (Déjà présent)
+        pygame.draw.rect(surface, (30, 30, 30), self.rect)
+        pygame.draw.rect(surface, (100, 100, 100), self.rect, 1)
+        
+        font = pygame.font.SysFont("Arial", 18)
+        label = font.render(f"{self.title}: {self.data[-1]:.2f}°", True, self.color)
+        surface.blit(label, (self.rect.x, self.rect.y - 25))
+
+        if len(self.data) > 1:
+            points = []
+            for i, val in enumerate(self.data):
+                px = self.rect.x + (i * (self.rect.width / 100))
+                # Centre le 0 au milieu du graph
+                py = self.rect.centery - (val * (self.rect.height / 360))
+                py = max(self.rect.top, min(py, self.rect.bottom))
+                points.append((px, py))
+            
+            # --- LA LIGNE MANQUANTE : ---
+            pygame.draw.lines(surface, self.color, False, points, 2)
 
 # --- NOUVELLE CLASSE DE THREAD POUR LA LECTURE SÉRIE (CONSOLE ESP32) ---
 class SerialReadThread(threading.Thread):
@@ -57,17 +91,25 @@ class SerialReadThread(threading.Thread):
                     while self.ser.in_waiting > 0:
                         line = self.ser.readline().decode('utf-8', errors='ignore').strip()
                         if line:
-                            print(f"{COLOR_GREEN}[ESP32 LOG {time.strftime('%H:%M:%S')}] {line}{COLOR_END}")
-
                             # --- ÉCRITURE DANS LE FICHIER LOG CSV ---
                             if line.startswith("MPU_DATA"):
                                 parts = line.split(",")
                                 if len(parts) == 13:  # 12 floats + "MPU_DATA"
+                                    print(f"{COLOR_GREEN}[ESP32 LOG {time.strftime('%H:%M:%S')}] {line}{COLOR_END}")
                                     timestamp = time.time()
-                                    if len(parts) == 13:  # 12 floats + "MPU_DATA"
-                                        timestamp = time.strftime("%Y-%m-%d %H:%M:%S.") + f"{int(time.time() * 1000) % 1000:03d}"
-                                        self.log_file.write(f"{timestamp},{','.join(parts[1:])}\n")
-                                        self.log_file.flush()
+                                    timestamp = time.strftime("%Y-%m-%d %H:%M:%S.") + f"{int(time.time() * 1000) % 1000:03d}"
+                                    self.log_file.write(f"{timestamp},{','.join(parts[1:])}\n")
+                                    self.log_file.flush()
+                                    with snapshot_lock:
+                                        try:
+                                            mpu_angles["roll"] = float(parts[10])
+                                            mpu_angles["pitch"] = float(parts[11])
+                                            mpu_angles["yaw"] = float(parts[12])
+                                        except ValueError:
+                                            mpu_angles["roll"] = 0
+                                            mpu_angles["pitch"] = 0
+                                            mpu_angles["yaw"] = 0
+                                            pass
 
                 time.sleep(0.1)
 
@@ -90,12 +132,16 @@ class PygameViewThread(threading.Thread):
         self.serial_port_open = serial_port_open
 
     def run(self):
-        global controller_snapshot, running_pygame, serial_port, space_was_pressed
+        global controller_snapshot, running_pygame, serial_port, space_was_pressed, mpu_angles
         
         # Initialisation Pygame dans le thread
         pygame.init()
         pygame.joystick.init()
         pygame.font.init()
+
+        g_roll  = RealTimeGraph(700, 70,  350, 120, "ROLL", (255, 80, 80))
+        g_pitch = RealTimeGraph(700, 260, 350, 120, "PITCH", (80, 255, 80))
+        g_yaw   = RealTimeGraph(700, 450, 350, 120, "YAW", (80, 80, 255))
         
         screen = pygame.display.set_mode((view.SCREEN_WIDTH, view.SCREEN_HEIGHT))
         pygame.display.set_caption("Lecteur Manette XInput pour ESP32 (Thread Affichage)")
@@ -105,30 +151,38 @@ class PygameViewThread(threading.Thread):
         print("\n--- Démarrage du Thread Pygame pour l'affichage ---")
 
         while running_pygame:
-            # Gère les événements de la fenêtre (fermeture)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running_pygame = False
+            
+            # 1. Effacer l'écran en premier
+            screen.fill((20, 20, 20)) 
+
+            # 2. Accès aux données et mise à jour des points
+            with snapshot_lock:
+                if controller_snapshot:
+                    local_snapshot = controller_snapshot.copy()
+                    view.draw_controller_state(screen, local_snapshot, serial_port, space_was_pressed)
                 
-            # Affichage graphique
-            # N'essayez d'afficher que si un snapshot est disponible
-            if controller_snapshot:
-                with snapshot_lock:
-                    # Crée une copie locale pour l'affichage (éviter un accès prolongé au verrou)
-                    local_snapshot = controller_snapshot.copy() 
-                
-                # --- A. AFFICHAGE GRAPHIQUE ---
-                view.draw_controller_state(screen, local_snapshot, serial_port, space_was_pressed)
-                
-            # Limiter le taux de rafraîchissement du thread Pygame à 30 FPS par exemple
-            clock.tick(30) # Limite à 30 images par seconde max
+                g_roll.add_point(mpu_angles["roll"])
+                g_pitch.add_point(mpu_angles["pitch"])
+                g_yaw.add_point(mpu_angles["yaw"])
+            
+            # 3. Dessiner les lignes des graphiques
+            g_roll.draw(screen)
+            g_pitch.draw(screen)
+            g_yaw.draw(screen)
+
+            # 4. Rafraîchir l'affichage
+            pygame.display.flip()
+            clock.tick(30)
             
         pygame.quit()
         print("Thread Pygame terminé.")
 
 # --- THREAD PRINCIPAL (Lecture Manette et Envoi Série) ---
 def main():
-    global controller_snapshot, running_pygame, serial_port, space_was_pressed
+    global controller_snapshot, running_pygame, serial_port, space_was_pressed, mpu_angles
 
     # --- 0. Sélection du Port Série ---
     selected_port = select_serial_port()
