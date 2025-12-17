@@ -39,10 +39,11 @@ timestamp = time.strftime("%Y-%m-%d_%H-%M-%S-") + f"{int(time.time() * 1000) % 1
 LOG_FILE_PATH = f"mpu_data_log_{timestamp}.csv"
 
 class RealTimeGraph:
-    def __init__(self, x, y, width, height, title, color):
+    def __init__(self, x, y, width, height, title, color, center_zero=True):
         self.rect = pygame.Rect(x, y, width, height)
         self.title = title
         self.color = color
+        self.center_zero = center_zero
         self.data = [0.0] * 100 
 
     def add_point(self, val):
@@ -64,7 +65,11 @@ class RealTimeGraph:
             for i, val in enumerate(self.data):
                 px = self.rect.x + (i * (self.rect.width / 100))
                 # Centre le 0 au milieu du graph
-                py = self.rect.centery - (val * (self.rect.height / 360))
+                py = 0
+                if(self.center_zero):
+                    py = self.rect.centery - (val * (self.rect.height / 2 / 180))
+                else:
+                    py = self.rect.bottom - (val * (self.rect.height / 360))
                 py = max(self.rect.top, min(py, self.rect.bottom))
                 points.append((px, py))
             
@@ -141,7 +146,7 @@ class PygameViewThread(threading.Thread):
 
         g_roll  = RealTimeGraph(700, 70,  350, 120, "ROLL", (255, 80, 80))
         g_pitch = RealTimeGraph(700, 260, 350, 120, "PITCH", (80, 255, 80))
-        g_yaw   = RealTimeGraph(700, 450, 350, 120, "YAW", (80, 80, 255))
+        g_yaw   = RealTimeGraph(700, 450, 350, 120, "YAW", (80, 80, 255), False)
         
         screen = pygame.display.set_mode((view.SCREEN_WIDTH, view.SCREEN_HEIGHT))
         pygame.display.set_caption("Lecteur Manette XInput pour ESP32 (Thread Affichage)")
