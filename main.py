@@ -100,7 +100,7 @@ class SerialReadThread(threading.Thread):
                             if line.startswith("MPU_DATA"):
                                 parts = line.split(",")
                                 if len(parts) == 13:  # 12 floats + "MPU_DATA"
-                                    print(f"{COLOR_GREEN}[ESP32 LOG {time.strftime('%H:%M:%S')}] {line}{COLOR_END}")
+                                    #print(f"{COLOR_GREEN}[ESP32 LOG {time.strftime('%H:%M:%S')}] {line}{COLOR_END}")
                                     timestamp = time.time()
                                     timestamp = time.strftime("%Y-%m-%d %H:%M:%S.") + f"{int(time.time() * 1000) % 1000:03d}"
                                     self.log_file.write(f"{timestamp},{','.join(parts[1:])}\n")
