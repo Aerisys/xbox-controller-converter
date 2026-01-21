@@ -25,7 +25,7 @@ COLOR_END = '\033[0m'     # Code pour réinitialiser la couleur
 # --- NOUVELLES VARIABLES GLOBALES POUR SYNCHRONISATION ---
 # Dictionnaire partagé pour l'état de la manette
 controller_snapshot = None 
-mpu_angles = {"roll": 0.0, "pitch": 0.0, "yaw": 0.0}
+mpu_angles = {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "motor1": 0, "motor2": 0, "motor3": 0, "motor4": 0}
 # Verrou pour protéger l'accès au dictionnaire partagé
 snapshot_lock = threading.Lock() 
 # Indicateur pour le thread Pygame et le thread principal
@@ -39,12 +39,13 @@ timestamp = time.strftime("%Y-%m-%d_%H-%M-%S-") + f"{int(time.time() * 1000) % 1
 LOG_FILE_PATH = f"mpu_data_log_{timestamp}.csv"
 
 class RealTimeGraph:
-    def __init__(self, x, y, width, height, title, color, center_zero=True):
+    def __init__(self, x, y, width, height, title, color, center_zero=True, degre=True):
         self.rect = pygame.Rect(x, y, width, height)
         self.title = title
         self.color = color
         self.center_zero = center_zero
         self.data = [0.0] * 100 
+        self.degre = degre
 
     def add_point(self, val):
         self.data.append(val)
@@ -57,7 +58,11 @@ class RealTimeGraph:
         pygame.draw.rect(surface, (100, 100, 100), self.rect, 1)
         
         font = pygame.font.SysFont("Arial", 18)
-        label = font.render(f"{self.title}: {self.data[-1]:.2f}°", True, self.color)
+        if self.degre:
+            label = font.render(f"{self.title}: {self.data[-1]:.2f}°", True, self.color)
+        else:
+            label = font.render(f"{self.title}: {self.data[-1]:.2f}", True, self.color)
+
         surface.blit(label, (self.rect.x, self.rect.y - 25))
 
         if len(self.data) > 1:
@@ -99,7 +104,7 @@ class SerialReadThread(threading.Thread):
                             # --- ÉCRITURE DANS LE FICHIER LOG CSV ---
                             if line.startswith("MPU_DATA"):
                                 parts = line.split(",")
-                                if len(parts) == 13:  # 12 floats + "MPU_DATA"
+                                if len(parts) == 17:  # "MPU_DATA" + 12 floats IMU + 4 floats Moteurs
                                     #print(f"{COLOR_GREEN}[ESP32 LOG {time.strftime('%H:%M:%S')}] {line}{COLOR_END}")
                                     timestamp = time.time()
                                     timestamp = time.strftime("%Y-%m-%d %H:%M:%S.") + f"{int(time.time() * 1000) % 1000:03d}"
@@ -110,10 +115,18 @@ class SerialReadThread(threading.Thread):
                                             mpu_angles["roll"] = float(parts[10])
                                             mpu_angles["pitch"] = float(parts[11])
                                             mpu_angles["yaw"] = float(parts[12])
+                                            mpu_angles["motor1"] = float(parts[13])
+                                            mpu_angles["motor2"] = float(parts[14])
+                                            mpu_angles["motor3"] = float(parts[15])
+                                            mpu_angles["motor4"] = float(parts[16])
                                         except ValueError:
                                             mpu_angles["roll"] = 0
                                             mpu_angles["pitch"] = 0
                                             mpu_angles["yaw"] = 0
+                                            mpu_angles["motor1"] = 0
+                                            mpu_angles["motor2"] = 0
+                                            mpu_angles["motor3"] = 0
+                                            mpu_angles["motor4"] = 0
                                             pass
                             else:
                                 print(f"{COLOR_CYAN}[ESP32 LOG {time.strftime('%H:%M:%S')}] {line}{COLOR_END}")
@@ -149,7 +162,11 @@ class PygameViewThread(threading.Thread):
         g_roll  = RealTimeGraph(700, 70,  350, 120, "ROLL", (255, 80, 80))
         g_pitch = RealTimeGraph(700, 260, 350, 120, "PITCH", (80, 255, 80))
         g_yaw   = RealTimeGraph(700, 450, 350, 120, "YAW", (80, 80, 255), False)
-        
+        g_motor1 = RealTimeGraph(1060, 70, 350, 120, "MOTOR1", (255, 80, 80), False, False)
+        g_motor2 = RealTimeGraph(1060, 260, 350, 120, "MOTOR2", (80, 255, 80), False, False)
+        g_motor3 = RealTimeGraph(1060, 450, 350, 120, "MOTOR3", (80, 80, 255), False, False)
+        g_motor4 = RealTimeGraph(1060, 640, 350, 120, "MOTOR4", (255, 80, 80), False, False)
+
         screen = pygame.display.set_mode((view.SCREEN_WIDTH, view.SCREEN_HEIGHT))
         pygame.display.set_caption("Lecteur Manette XInput pour ESP32 (Thread Affichage)")
         
@@ -174,11 +191,19 @@ class PygameViewThread(threading.Thread):
                 g_roll.add_point(mpu_angles["roll"])
                 g_pitch.add_point(mpu_angles["pitch"])
                 g_yaw.add_point(mpu_angles["yaw"])
+                g_motor1.add_point(mpu_angles["motor1"])
+                g_motor2.add_point(mpu_angles["motor2"])
+                g_motor3.add_point(mpu_angles["motor3"])
+                g_motor4.add_point(mpu_angles["motor4"])
             
             # 3. Dessiner les lignes des graphiques
             g_roll.draw(screen)
             g_pitch.draw(screen)
             g_yaw.draw(screen)
+            g_motor1.draw(screen)
+            g_motor2.draw(screen)
+            g_motor3.draw(screen)
+            g_motor4.draw(screen)
 
             # 4. Rafraîchir l'affichage
             pygame.display.flip()
@@ -202,20 +227,16 @@ def main():
     pygame.joystick.init()
 
     # --- 1. Initialisation Manette ---
+    joystick = None
     try:
-        if pygame.joystick.get_count() == 0:
-            print("❌ Aucune manette XInput détectée ! Veuillez la connecter.")
-            pygame.quit()
-            sys.exit(1)
-
-        joystick = pygame.joystick.Joystick(0)
-        joystick.init()
-        print(f"✅ Manette détectée : {joystick.get_name()}")
-        
+        if pygame.joystick.get_count() > 0:
+            joystick = pygame.joystick.Joystick(0)
+            joystick.init()
+            print(f"✅ Manette détectée : {joystick.get_name()}")
+        else:
+            print("⚠️ Aucune manette détectée. Le programme continue en mode 'Réception seule'.")
     except Exception as e:
-        print(f"❌ Erreur d'initialisation de la manette : {e}", file=sys.stderr)
-        pygame.quit()
-        sys.exit(1)
+        print(f"⚠️ Erreur lors de l'initialisation de la manette : {e}")
 
     # --- 2. Initialisation du Port Série ---
     ser = None
@@ -260,26 +281,26 @@ def main():
                 running_main = False
                 break
                 
+            snapshot = None
+            packet = None
+
             # Lire l'état de la manette
-            snapshot, packet = controller_to_esp.map_xbox_controller(joystick)
+            if joystick is not None:
+                try:
+                    snapshot, packet = controller_to_esp.map_xbox_controller(joystick)
+                except Exception as e:
+                    print(f"Erreur lecture manette : {e}")
+                    joystick = None # On "déconnecte" logiciellement en cas d'erreur
             
-            if snapshot:
-                # Mettre à jour le snapshot partagé (avec verrou)
+            if snapshot and packet:
                 with snapshot_lock:
                     controller_snapshot = snapshot
-                
                 try:
                     if ser and ser.is_open:
-                        # ENVOI des données JSON
                         ser.write(packet)
-                    
-                    # Affichage pour le débogage de l'envoi
-                    # print(f"[PC TX {time.strftime('%H:%M:%S')}] Envoi ({len(json_data)} octets) : {json_data}")
-
-                except serial.SerialTimeoutException:
-                    print("Timeout d'envoi série.", file=sys.stderr)
                 except Exception as e:
                     print(f"Erreur d'écriture série: {e}", file=sys.stderr)
+
             keys = pygame.key.get_pressed()
             space_pressed = keys[pygame.K_SPACE]
 
